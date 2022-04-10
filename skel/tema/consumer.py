@@ -9,6 +9,7 @@ March 2021
 from math import prod
 from threading import Thread, Lock
 import time
+import sys
 
 class Consumer(Thread):
     """
@@ -58,9 +59,7 @@ class Consumer(Thread):
             
     def print_cart(self, cart):
         for product in cart:
-            for product_data in cart[product]:
-                for _ in range(product_data[1]):
-                    print(self.kwargs['name'], "bought", product)
+            print(self.kwargs['name'], "bought", product)
 
     def run(self):
         for cart in self.carts:

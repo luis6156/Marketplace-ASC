@@ -9,12 +9,26 @@ March 2021
 
 from math import prod
 from threading import Lock
+import logging
+import time
+from logging.handlers import RotatingFileHandler
 
 class Marketplace:
     """
     Class that represents the Marketplace. It's the central part of the implementation.
     The producers and consumers use its methods concurrently.
     """
+    formatter = logging.Formatter(fmt='%(asctime)s %(levelname)-5s %(message)s',
+                                  datefmt='%Y-%m-%d %H:%M:%S')
+    logging.Formatter.converter = time.gmtime
+    logger = logging.getLogger('my_logger')
+    logger.setLevel(logging.INFO)
+    handler = RotatingFileHandler('marketplace.log', maxBytes=10000, backupCount=10)
+    handler.setFormatter(formatter)
+    logger.propagate = False
+    logging.Formatter.converter = time.gmtime
+    logger.addHandler(handler)
+    
     def __init__(self, queue_size_per_producer):
         """
         Constructor
@@ -38,9 +52,13 @@ class Marketplace:
         producer_id = self.num_producers
         self.num_producers += 1
         self.products_per_producer.append(0)
+        
+        self.logger.info('Method \'register producer\' returns int: %d', producer_id)
         return producer_id
     
     def add_product(self, producer_id, product):
+        self.logger.info('Method \'add_product\' has params producer_id (int): %d, product (object): %s', producer_id, str(product))
+        
         if (self.products.get(product) == None):
                 self.products[product] = {producer_id : 1}
         else:
@@ -61,14 +79,18 @@ class Marketplace:
 
         :returns True or False. If the caller receives False, it should wait and then try again.
         """
+        self.logger.info('Method \'publish\' has params producer_id (int): %d, product (object): %s', producer_id, str(product))
+        
         if (self.products_per_producer[producer_id] < self.queue_size_per_producer):
             self.products_per_producer[producer_id] += 1
             
             self.lock_add_product.acquire()
             self.add_product(producer_id, product)
             self.lock_add_product.release()
+            self.logger.info('Method \'publish\' returns bool: True')
             return True
         else:
+            self.logger.info('Method \'publish\' returns bool: False')
             return False
 
     def new_cart(self):
@@ -80,6 +102,8 @@ class Marketplace:
         cart_id = self.num_carts
         self.carts[cart_id] = {}
         self.num_carts += 1
+        
+        self.logger.info('Method \'new_cart\' returns int: %d', cart_id)
         return cart_id
 
     def add_to_cart(self, cart_id, product):
@@ -94,7 +118,10 @@ class Marketplace:
 
         :returns True or False. If the caller receives False, it should wait and then try again
         """
+        self.logger.info('Method \'add_to_cart\' has params cart_id (int): %d, product (object): %s', cart_id, str(product))
+        
         if (self.products.get(product) == None):
+            logging.info('Method \'add_to_cart\' returns bool: False')
             return False
         
         self.lock_add_cart.acquire()
@@ -119,6 +146,8 @@ class Marketplace:
                     break
             else:
                 self.carts[cart_id][product].append([producer_id, 1])
+                
+        self.logger.info('Method \'add_to_cart\' returns bool: True')
         return True
 
     def remove_from_cart(self, cart_id, product):
@@ -131,6 +160,8 @@ class Marketplace:
         :type product: Product
         :param product: the product to remove from cart
         """
+        self.logger.info('Method \'remove_from_cart\' has params cart_id (int): %d, product (object): %s', cart_id, str(product))
+        
         if (self.carts[cart_id].get(product) == None):
             return
         
@@ -150,10 +181,17 @@ class Marketplace:
         :type cart_id: Int
         :param cart_id: id cart
         """
+        self.logger.info('Method \'place_order\' has params cart_id (int): %d', cart_id)
+        
+        cart_list = []
+        
         for product in self.carts[cart_id]:
             for producer in self.carts[cart_id][product]:
                 for _ in range(producer[1]):
                     self.products_per_producer[producer[0]] -= 1
+                    cart_list.append(product)
             
-        cart = self.carts.pop(cart_id)
-        return cart
+        del(self.carts[cart_id])
+        
+        self.logger.info('Method \'place_order\' returns cart (list): %s', str(cart_list))
+        return cart_list
