@@ -7,6 +7,9 @@ March 2021
 """
 
 
+from math import prod
+from threading import Lock
+
 class Marketplace:
     """
     Class that represents the Marketplace. It's the central part of the implementation.
@@ -19,13 +22,32 @@ class Marketplace:
         :type queue_size_per_producer: Int
         :param queue_size_per_producer: the maximum size of a queue associated with each producer
         """
-        pass
+        self.queue_size_per_producer = queue_size_per_producer
+        self.num_carts = 0
+        self.num_producers = 0
+        self.products_per_producer = []
+        self.carts = {}
+        self.products = {}
+        self.lock_add_cart = Lock()
+        self.lock_add_product = Lock()
 
     def register_producer(self):
         """
         Returns an id for the producer that calls this.
         """
-        pass
+        producer_id = self.num_producers
+        self.num_producers += 1
+        self.products_per_producer.append(0)
+        return producer_id
+    
+    def add_product(self, producer_id, product):
+        if (self.products.get(product) == None):
+                self.products[product] = {producer_id : 1}
+        else:
+            if (self.products[product].get(producer_id) == None):
+                self.products[product][producer_id] = 1
+            else:
+                self.products[product][producer_id] += 1
 
     def publish(self, producer_id, product):
         """
@@ -39,7 +61,15 @@ class Marketplace:
 
         :returns True or False. If the caller receives False, it should wait and then try again.
         """
-        pass
+        if (self.products_per_producer[producer_id] < self.queue_size_per_producer):
+            self.products_per_producer[producer_id] += 1
+            
+            self.lock_add_product.acquire()
+            self.add_product(producer_id, product)
+            self.lock_add_product.release()
+            return True
+        else:
+            return False
 
     def new_cart(self):
         """
@@ -47,7 +77,10 @@ class Marketplace:
 
         :returns an int representing the cart_id
         """
-        pass
+        cart_id = self.num_carts
+        self.carts[cart_id] = {}
+        self.num_carts += 1
+        return cart_id
 
     def add_to_cart(self, cart_id, product):
         """
@@ -61,7 +94,32 @@ class Marketplace:
 
         :returns True or False. If the caller receives False, it should wait and then try again
         """
-        pass
+        if (self.products.get(product) == None):
+            return False
+        
+        self.lock_add_cart.acquire()
+        
+        producer_id = next(iter(self.products[product]))
+        # Decrement the quantity of the required product that the producer has in the marketplace
+        self.products[product][producer_id] -= 1
+        if (self.products[product][producer_id] == 0):
+            del(self.products[product][producer_id])
+            
+        if (len(self.products[product]) == 0):
+            del(self.products[product])     
+            
+        self.lock_add_cart.release()
+        
+        if (self.carts[cart_id].get(product) == None):
+            self.carts[cart_id][product] = [[producer_id, 1]]
+        else:
+            for cart_product in self.carts[cart_id][product]:
+                if (cart_product[0] == producer_id):
+                    cart_product[1] += 1
+                    break
+            else:
+                self.carts[cart_id][product].append([producer_id, 1])
+        return True
 
     def remove_from_cart(self, cart_id, product):
         """
@@ -73,7 +131,17 @@ class Marketplace:
         :type product: Product
         :param product: the product to remove from cart
         """
-        pass
+        if (self.carts[cart_id].get(product) == None):
+            return
+        
+        producer_id = self.carts[cart_id][product][0][0]
+        self.carts[cart_id][product][0][1] -= 1
+        if (self.carts[cart_id][product][0][1] == 0):
+            del(self.carts[cart_id][product][0])
+            
+        self.lock_add_product.acquire()   
+        self.add_product(producer_id, product)
+        self.lock_add_product.release()
 
     def place_order(self, cart_id):
         """
@@ -82,4 +150,10 @@ class Marketplace:
         :type cart_id: Int
         :param cart_id: id cart
         """
-        pass
+        for product in self.carts[cart_id]:
+            for producer in self.carts[cart_id][product]:
+                for _ in range(producer[1]):
+                    self.products_per_producer[producer[0]] -= 1
+            
+        cart = self.carts.pop(cart_id)
+        return cart
