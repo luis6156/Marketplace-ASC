@@ -11,7 +11,10 @@ from math import prod
 from threading import Lock
 import logging
 import time
+import unittest
 from logging.handlers import RotatingFileHandler
+
+from yaml import Mark
 
 class Marketplace:
     """
@@ -169,6 +172,8 @@ class Marketplace:
         self.carts[cart_id][product][0][1] -= 1
         if (self.carts[cart_id][product][0][1] == 0):
             del(self.carts[cart_id][product][0])
+        if (self.carts[cart_id][product] == []):
+            del(self.carts[cart_id][product])
             
         self.lock_add_product.acquire()   
         self.add_product(producer_id, product)
@@ -195,3 +200,121 @@ class Marketplace:
         
         self.logger.info('Method \'place_order\' returns cart (list): %s', str(cart_list))
         return cart_list
+    
+class MarketplaceTest(unittest.TestCase):
+    def setUp(self):
+        self.marketplace = Marketplace(5)
+    
+    def test_register_producer(self):
+        self.assertEqual(0, self.marketplace.register_producer())
+        self.assertEqual(1, self.marketplace.register_producer())
+
+    def test_add_product(self):
+        self.marketplace.add_product(0, 'Chocolate')
+        self.assertIsNotNone(self.marketplace.products.get('Chocolate'))
+        self.assertDictEqual({0: 1}, self.marketplace.products['Chocolate'])
+        self.marketplace.add_product(0, 'Chocolate')
+        self.assertDictEqual({0: 2}, self.marketplace.products['Chocolate'])
+        self.marketplace.add_product(0, 'Vanilla')
+        self.assertDictEqual({0: 1}, self.marketplace.products['Vanilla'])
+        self.marketplace.add_product(1, 'Chocolate')
+        self.assertDictEqual({0: 2, 1: 1}, self.marketplace.products['Chocolate'])
+        self.marketplace.add_product(1, 'Chocolate')
+        self.assertDictEqual({0: 2, 1: 2}, self.marketplace.products['Chocolate'])
+        self.assertIsNone(self.marketplace.products.get('None'))
+        
+    def test_publish(self):
+        producer_id = self.marketplace.register_producer()
+        
+        for i in range(5):
+            self.assertTrue(self.marketplace.publish(producer_id, 'Cocoa'))
+            self.assertDictEqual({producer_id: i + 1}, self.marketplace.products['Cocoa'])
+            self.assertEqual(i + 1, self.marketplace.products_per_producer[producer_id])
+            
+        self.assertFalse(self.marketplace.publish(producer_id, 'Cocoa'))
+        self.assertDictEqual({producer_id: 5}, self.marketplace.products['Cocoa'])
+        self.assertEqual(5, self.marketplace.products_per_producer[producer_id])
+        
+    def test_new_cart(self):
+        self.assertEqual(0, self.marketplace.new_cart())
+        self.assertEqual(1, self.marketplace.new_cart())
+        
+    def test_add_to_cart(self):
+        cart = self.marketplace.new_cart()
+        producer_id = self.marketplace.register_producer()
+        producer_id_new = self.marketplace.register_producer()
+        
+        self.marketplace.publish(producer_id, 'Cocoa')
+        self.marketplace.publish(producer_id, 'Cocoa')
+        self.marketplace.publish(producer_id, 'Vanilla')
+        self.assertTrue(self.marketplace.add_to_cart(cart, 'Cocoa'))
+        self.assertDictEqual({'Cocoa': [[producer_id, 1]]}, self.marketplace.carts[cart])
+        self.marketplace.add_to_cart(cart, 'Cocoa')
+        self.assertDictEqual({'Cocoa': [[producer_id, 2]]}, self.marketplace.carts[cart])
+        self.marketplace.add_to_cart(cart, 'Vanilla')
+        self.assertDictEqual({'Cocoa': [[producer_id, 2]], 'Vanilla': [[producer_id, 1]]}, self.marketplace.carts[cart])
+        self.marketplace.add_to_cart(cart, 'Cocoa')
+        self.assertDictEqual({'Cocoa': [[producer_id, 2]], 'Vanilla': [[producer_id, 1]]}, self.marketplace.carts[cart])
+        self.marketplace.publish(producer_id_new, 'Cocoa')
+        self.marketplace.add_to_cart(cart, 'Cocoa')
+        self.assertDictEqual({'Cocoa': [[producer_id, 2], [producer_id_new, 1]], 'Vanilla': [[producer_id, 1]]}, self.marketplace.carts[cart])
+
+        self.assertIsNone(self.marketplace.carts[cart].get('None'))
+        self.assertFalse(self.marketplace.add_to_cart(cart, 'None'))
+        
+        self.assertIsNone(self.marketplace.products.get('Cocoa'))
+        self.assertEqual(3, self.marketplace.products_per_producer[producer_id])
+        
+    def test_remove_from_cart(self):
+        cart = self.marketplace.new_cart()
+        producer_id = self.marketplace.register_producer()
+        producer_id_new = self.marketplace.register_producer()
+        
+        self.marketplace.publish(producer_id, 'Cocoa')
+        self.marketplace.publish(producer_id, 'Cocoa')
+        self.marketplace.publish(producer_id, 'Vanilla')
+        self.marketplace.publish(producer_id_new, 'Cocoa')
+        self.marketplace.add_to_cart(cart, 'Cocoa')
+        self.marketplace.add_to_cart(cart, 'Cocoa')
+        self.marketplace.add_to_cart(cart, 'Cocoa')
+        self.marketplace.add_to_cart(cart, 'Vanilla')
+        
+        self.marketplace.remove_from_cart(cart, 'Cocoa')
+        self.assertDictEqual({'Cocoa': [[producer_id, 1], [producer_id_new, 1]], 'Vanilla': [[producer_id, 1]]}, self.marketplace.carts[cart])
+        self.assertDictEqual({producer_id: 1}, self.marketplace.products['Cocoa'])
+        
+        self.assertEqual(3, self.marketplace.products_per_producer[producer_id])
+        
+        self.marketplace.remove_from_cart(cart, 'Cocoa')
+        self.assertDictEqual({'Cocoa': [[producer_id_new, 1]], 'Vanilla': [[producer_id, 1]]}, self.marketplace.carts[cart])
+        
+        self.marketplace.remove_from_cart(cart, 'Cocoa')
+        self.assertDictEqual({'Vanilla': [[producer_id, 1]]}, self.marketplace.carts[cart])
+        self.marketplace.remove_from_cart(cart, 'None')
+        self.assertDictEqual({'Vanilla': [[producer_id, 1]]}, self.marketplace.carts[cart])
+        self.marketplace.remove_from_cart(cart, 'Vanilla')
+        self.assertDictEqual({}, self.marketplace.carts[cart])
+        self.marketplace.remove_from_cart(cart, 'None')
+        self.assertDictEqual({}, self.marketplace.carts[cart])
+        
+    def test_place_order(self):
+        cart = self.marketplace.new_cart()
+        producer_id = self.marketplace.register_producer()
+        producer_id_new = self.marketplace.register_producer()
+        
+        self.marketplace.publish(producer_id, 'Cocoa')
+        self.marketplace.publish(producer_id, 'Cocoa')
+        self.marketplace.publish(producer_id, 'Vanilla')
+        self.marketplace.publish(producer_id_new, 'Cocoa')
+        self.marketplace.add_to_cart(cart, 'Cocoa')
+        self.marketplace.add_to_cart(cart, 'Cocoa')
+        self.marketplace.add_to_cart(cart, 'Cocoa')
+        self.marketplace.add_to_cart(cart, 'Vanilla')
+        
+        self.assertEqual(['Cocoa', 'Cocoa', 'Cocoa', 'Vanilla'], self.marketplace.place_order(cart))
+        self.assertIsNone(self.marketplace.carts.get(cart))
+        self.assertEqual(0, self.marketplace.products_per_producer[producer_id])
+        self.assertIsNone(self.marketplace.products.get('Cocoa'))
+        self.assertIsNone(self.marketplace.products.get('Vanilla'))
+        
+        
