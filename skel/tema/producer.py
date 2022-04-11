@@ -9,6 +9,7 @@ March 2021
 from threading import Thread
 import time
 
+
 class Producer(Thread):
     """
     Class that represents a producer.
@@ -38,20 +39,23 @@ class Producer(Thread):
         self.kwargs = kwargs
 
     def run(self):
+        # Generate producer ID
         producer_id = self.marketplace.register_producer()
-        
+
         while True:
             for product in self.products:
                 current_quantity_added = 0
                 prod_name = product[0]
                 prod_quantity = product[1]
                 prod_wait_time = product[2]
-                while (current_quantity_added < prod_quantity):
+
+                # Publish as many products as needed
+                while current_quantity_added < prod_quantity:
                     status = self.marketplace.publish(producer_id, prod_name)
-                    if (status == False):
+                    if status is False:
+                        # Retry again in a few moments
                         time.sleep(self.republish_wait_time)
                     else:
+                        # Produce the product and increment the counter
                         time.sleep(prod_wait_time)
                         current_quantity_added += 1
-            
-            
