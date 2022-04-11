@@ -40,6 +40,7 @@ class Consumer(Thread):
         self.lock = Lock()
 
     def add_to_cart(self, cart_id, product, quantity):
+        """ Adds quantity products to the cart with the given id. """
         num_products_added = 0
 
         # Add as many items as needed
@@ -53,6 +54,7 @@ class Consumer(Thread):
                 num_products_added += 1
 
     def remove_from_cart(self, cart_id, product, quantity):
+        """ Removes quantity products to the cart with the given id. """
         num_products_removed = 0
 
         # Remove as many products as needed
@@ -61,7 +63,7 @@ class Consumer(Thread):
             num_products_removed += 1
 
     def print_cart(self, cart):
-        # Print products in cart
+        """ Print products in cart """
         for product in cart:
             print(self.kwargs['name'], "bought", product)
 

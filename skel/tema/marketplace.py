@@ -55,10 +55,9 @@ class Marketplace:
         Returns an id for the producer that calls this.
         """
         # Does not let two threads have the same producer id
-        self.lock_producer.acquire()
-        producer_id = self.num_producers
-        self.num_producers += 1
-        self.lock_producer.release()
+        with self.lock_producer:
+            producer_id = self.num_producers
+            self.num_producers += 1
 
         # Create object counter for producer
         self.products_per_producer.append(0)
@@ -68,6 +67,7 @@ class Marketplace:
         return producer_id
 
     def add_product(self, producer_id, product):
+        """ Adds product to marketplace. """
         self.logger.info(
             'Method \'add_product\' has params producer_id (int): %d, product (object): %s',
             producer_id, str(product))
@@ -105,9 +105,8 @@ class Marketplace:
             self.products_per_producer[producer_id] += 1
 
             # Let only one thread add a product
-            self.lock_add_product.acquire()
-            self.add_product(producer_id, product)
-            self.lock_add_product.release()
+            with self.lock_add_product:
+                self.add_product(producer_id, product)
 
             self.logger.info('Method \'publish\' returns bool: True')
             return True
@@ -122,10 +121,9 @@ class Marketplace:
         :returns an int representing the cart_id
         """
         # Does not let two threads have the same cart id
-        self.lock_cart.acquire()
-        cart_id = self.num_carts
-        self.num_carts += 1
-        self.lock_cart.release()
+        with self.lock_cart:
+            cart_id = self.num_carts
+            self.num_carts += 1
 
         # Initialize empty dictionary for the generated cart
         self.carts[cart_id] = {}
@@ -155,22 +153,20 @@ class Marketplace:
             return False
 
         # Let only one thread occupy a product
-        self.lock_add_cart.acquire()
+        with self.lock_add_cart:
 
-        # Get the product from the first producer available
-        producer_id = next(iter(self.products[product]))
-        # Decrement the quantity of the required product that the producer has in the marketplace
-        self.products[product][producer_id] -= 1
+            # Get the product from the first producer available
+            producer_id = next(iter(self.products[product]))
+            # Decrement the quantity of the required product that the producer has in the market
+            self.products[product][producer_id] -= 1
 
-        # If the producer's quantity reaches 0 -> remove him
-        if self.products[product][producer_id] == 0:
-            del self.products[product][producer_id]
+            # If the producer's quantity reaches 0 -> remove him
+            if self.products[product][producer_id] == 0:
+                del self.products[product][producer_id]
 
-        # If the product does not have any more producers -> remove it
-        if len(self.products[product]) == 0:
-            del self.products[product]
-
-        self.lock_add_cart.release()
+            # If the product does not have any more producers -> remove it
+            if len(self.products[product]) == 0:
+                del self.products[product]
 
         # Check if the cart already has the product
         if self.carts[cart_id].get(product) is None:
@@ -220,9 +216,8 @@ class Marketplace:
             del self.carts[cart_id][product]
 
         # Let only one thread mark the product removed from the cart as available again
-        self.lock_add_product.acquire()
-        self.add_product(producer_id, product)
-        self.lock_add_product.release()
+        with self.lock_add_product:
+            self.add_product(producer_id, product)
 
     def place_order(self, cart_id):
         """
@@ -254,15 +249,19 @@ class Marketplace:
 
 
 class MarketplaceTest(unittest.TestCase):
+    """ Marketplace Test class """
     def setUp(self):
+        """ Sets up initial fields. """
         self.marketplace = Marketplace(5)
 
     def test_register_producer(self):
+        """ Test method """
         # Check the IDs of the producers
         self.assertEqual(0, self.marketplace.register_producer())
         self.assertEqual(1, self.marketplace.register_producer())
 
     def test_add_product(self):
+        """ Test method """
         self.marketplace.add_product(0, 'Chocolate')
         # Check if the product is added
         self.assertIsNotNone(self.marketplace.products.get('Chocolate'))
@@ -286,6 +285,7 @@ class MarketplaceTest(unittest.TestCase):
         self.assertIsNone(self.marketplace.products.get('None'))
 
     def test_publish(self):
+        """ Test method """
         producer_id = self.marketplace.register_producer()
 
         for i in range(5):
@@ -306,11 +306,13 @@ class MarketplaceTest(unittest.TestCase):
             5, self.marketplace.products_per_producer[producer_id])
 
     def test_new_cart(self):
+        """ Test method """
         # Check the IDs of the cart
         self.assertEqual(0, self.marketplace.new_cart())
         self.assertEqual(1, self.marketplace.new_cart())
 
     def test_add_to_cart(self):
+        """ Test method """
         cart = self.marketplace.new_cart()
         producer_id = self.marketplace.register_producer()
         producer_id_new = self.marketplace.register_producer()
@@ -352,6 +354,7 @@ class MarketplaceTest(unittest.TestCase):
             3, self.marketplace.products_per_producer[producer_id])
 
     def test_remove_from_cart(self):
+        """ Test method """
         cart = self.marketplace.new_cart()
         producer_id = self.marketplace.register_producer()
         producer_id_new = self.marketplace.register_producer()
@@ -398,6 +401,7 @@ class MarketplaceTest(unittest.TestCase):
         self.assertDictEqual({}, self.marketplace.carts[cart])
 
     def test_place_order(self):
+        """ Test method """
         cart = self.marketplace.new_cart()
         producer_id = self.marketplace.register_producer()
         producer_id_new = self.marketplace.register_producer()
